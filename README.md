@@ -12,7 +12,7 @@ Print layout studio with a public, upload-only page and a private admin workspac
    - `SESSION_SECRET` — a random value with at least 32 characters. It signs the admin session cookie. Generate one with `openssl rand -base64 48`.
 4. Deploy from the Git integration. Vercel builds the Vite page and deploys the `/api` functions alongside it.
 
-The username and password are checked by a server function and are never shipped in the page's JavaScript. Do not add real secrets to Git or commit a `.env` file.
+Open the deployed site with `?admin=1` to sign in (for example, `https://your-site.vercel.app/?admin=1`). The public home page stays upload-only and does not show an admin login link. The username and password are checked by a server function and are never shipped in the page JavaScript. Add the three values above as Vercel Project Environment Variables, choose the environments you deploy to, and redeploy after changing them. Do not add real secrets to Git or commit a `.env` file.
 
 ## Local development
 

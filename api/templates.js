@@ -5,8 +5,9 @@ function fitCapacity(page) {
   const sheetH = Number(page.sheetH) || 297;
   const itemW = Number(page.itemW) || 60;
   const itemH = Number(page.itemH) || 90;
-  const gap = 3;
-  return Math.max(1, Math.floor((sheetW - 6 + gap) / (itemW + gap)) * Math.floor((sheetH - 6 + gap) / (itemH + gap)));
+  const margin = Math.max(0, Number(page.margin ?? 3));
+  const gap = Math.max(0, Number(page.spacing ?? 3));
+  return Math.max(1, Math.floor((sheetW - 2 * margin + gap) / (itemW + gap)) * Math.floor((sheetH - 2 * margin + gap) / (itemH + gap)));
 }
 
 async function countUploads(id) {
@@ -40,6 +41,8 @@ export default async function handler(req, res) {
       itemW: Number(page.itemW) || 60,
       itemH: Number(page.itemH) || 90,
       cropFill: Boolean(page.cropFill),
+      margin: Number(page.margin ?? 3),
+      spacing: Number(page.spacing ?? 3),
       sheetW: Number(page.sheetW) || 210,
       sheetH: Number(page.sheetH) || 297,
       maxPhotos,

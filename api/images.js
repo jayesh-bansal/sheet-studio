@@ -1,5 +1,22 @@
-import { del, list } from '@vercel/blob';
+import { del, get, list } from '@vercel/blob';
 import { isAdmin, unauthorized } from '../lib/auth.js';
+
+async function completedUploads() {
+  const records = [];
+  let cursor;
+  do {
+    const result = await list({ access: 'private', prefix: 'admin/upload-completions/', limit: 1000, cursor });
+    for (const blob of result.blobs) {
+      const stored = await get(blob.pathname, { access: 'private' });
+      if (!stored || stored.statusCode !== 200) continue;
+      const chunks = [];
+      for await (const chunk of stored.stream) chunks.push(chunk);
+      try { records.push(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch {}
+    }
+    cursor = result.hasMore ? result.cursor : undefined;
+  } while (cursor);
+  return records.sort((a, b) => String(a.completedAt).localeCompare(String(b.completedAt)));
+}
 
 async function allImages() {
   const blobs = [];
@@ -26,7 +43,7 @@ export default async function handler(req, res) {
         contentType: blob.contentType,
         uploadedAt: blob.uploadedAt,
       }));
-      return res.status(200).json({ images });
+      return res.status(200).json({ images, completedBatches: await completedUploads() });
     }
     if (req.method === 'DELETE') {
       const pathname = String(req.query.pathname || '');

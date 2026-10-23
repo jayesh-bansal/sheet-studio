@@ -5,9 +5,11 @@ function fitCapacity(page) {
   const sheetH = Number(page.sheetH) || 297;
   const itemW = Number(page.itemW) || 60;
   const itemH = Number(page.itemH) || 90;
-  const margin = Math.max(0, Number(page.margin ?? 3));
-  const gap = Math.max(0, Number(page.spacing ?? 3));
-  return Math.max(1, Math.floor((sheetW - 2 * margin + gap) / (itemW + gap)) * Math.floor((sheetH - 2 * margin + gap) / (itemH + gap)));
+  const marginX = Math.max(0, Number(page.marginX ?? page.margin ?? 3));
+  const marginY = Math.max(0, Number(page.marginY ?? page.margin ?? 3));
+  const spacingX = Math.max(0, Number(page.spacingX ?? page.spacing ?? 3));
+  const spacingY = Math.max(0, Number(page.spacingY ?? page.spacing ?? 3));
+  return Math.max(1, Math.floor((sheetW - 2 * marginX + spacingX) / (itemW + spacingX)) * Math.floor((sheetH - 2 * marginY + spacingY) / (itemH + spacingY)));
 }
 
 async function countUploads(id) {
@@ -41,8 +43,11 @@ export default async function handler(req, res) {
       itemW: Number(page.itemW) || 60,
       itemH: Number(page.itemH) || 90,
       cropFill: Boolean(page.cropFill),
-      margin: Number(page.margin ?? 3),
-      spacing: Number(page.spacing ?? 3),
+      marginX: Number(page.marginX ?? page.margin ?? 3),
+      marginY: Number(page.marginY ?? page.margin ?? 3),
+      spacingX: Number(page.spacingX ?? page.spacing ?? 3),
+      spacingY: Number(page.spacingY ?? page.spacing ?? 3),
+      uploadLimit: 500,
       sheetW: Number(page.sheetW) || 210,
       sheetH: Number(page.sheetH) || 297,
       maxPhotos,

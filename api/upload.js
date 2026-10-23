@@ -20,16 +20,6 @@ async function templateUploads(id) {
   return blobs;
 }
 
-function fitCapacity(page) {
-  const sheetW = Number(page.sheetW) || 210;
-  const sheetH = Number(page.sheetH) || 297;
-  const itemW = Number(page.itemW) || 60;
-  const itemH = Number(page.itemH) || 90;
-  const margin = Math.max(0, Number(page.margin ?? 3));
-  const gap = Math.max(0, Number(page.spacing ?? 3));
-  return Math.max(1, Math.floor((sheetW - 2 * margin + gap) / (itemW + gap)) * Math.floor((sheetH - 2 * margin + gap) / (itemH + gap)));
-}
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
   try {
@@ -46,14 +36,14 @@ export default async function handler(req, res) {
           const layout = await storedLayout();
           const template = layout.pages?.find(page => String(page.id) === templateId);
           if (!template) throw new Error('This upload page is no longer available. Ask the print admin for a current QR code.');
-          const maxPhotos = Math.min(fitCapacity(template), Math.max(1, Number(template.maxPhotos) || fitCapacity(template)));
+          const uploadLimit = 500;
           const uploads = await templateUploads(templateId);
           let replacing = '';
           try { replacing = JSON.parse(clientPayload || '{}').replace || ''; } catch {}
           const canReplace = uploads.some(blob => blob.pathname === replacing);
           const currentCount = uploads.length - (canReplace ? 1 : 0);
-          if (currentCount >= maxPhotos) {
-            throw new Error(`This page has reached its photo limit of ${maxPhotos}. Please contact the print team.`);
+          if (currentCount >= uploadLimit) {
+            throw new Error(`This upload link has reached its ${uploadLimit}-photo queue limit. Please contact the print team.`);
           }
         }
         const allowedContentTypes = ['image/jpeg', 'image/png', 'image/webp'];

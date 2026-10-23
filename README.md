@@ -14,6 +14,10 @@ Print layout studio with a public, upload-only page and a private admin workspac
 
 Open the deployed site with `?admin=1` to sign in (for example, `https://your-site.vercel.app/?admin=1`). The public home page stays upload-only and does not show an admin login link. The username and password are checked by a server function and are never shipped in the page JavaScript. Add the three values above as Vercel Project Environment Variables, choose the environments you deploy to, and redeploy after changing them. Do not add real secrets to Git or commit a `.env` file.
 
+## Verify Vercel Blob
+
+After deployment, open `/api/blob-status` on the deployed site. A connected store returns `{"connected":true}`. If it returns `connected:false`, connect the Blob store to the same Vercel project and environment, then redeploy. A 404 means the latest API route has not been deployed yet.
+
 ## Local development
 
 ```sh

@@ -8,7 +8,9 @@ export default async function handler(req, res) {
       body,
       request: req,
       onBeforeGenerateToken: async pathname => {
-        if (!pathname.startsWith('customer-uploads/')) throw new Error('Invalid upload path.');
+        if (!/^customer-uploads\/(?:unassigned|\d+)\/[a-z0-9-]{36}-[a-zA-Z0-9._-]+$/i.test(pathname)) {
+          throw new Error('Invalid upload path.');
+        }
         return {
           allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
           maximumSizeInBytes: 25 * 1024 * 1024,

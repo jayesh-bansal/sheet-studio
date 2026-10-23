@@ -9,7 +9,7 @@ Print layout studio with a public, upload-only page and a private admin workspac
 3. In **Project Settings → Environment Variables**, add:
    - `ADMIN_USERNAME` — for example, `admin`
    - `ADMIN_PASSWORD` — a long, unique password of your choice
-   - `SESSION_SECRET` — a random value with at least 32 characters. Generate one with `openssl rand -base64 48`.
+   - `SESSION_SECRET` — a random value with at least 32 characters. It signs the admin session cookie. Generate one with `openssl rand -base64 48`.
 4. Deploy from the Git integration. Vercel builds the Vite page and deploys the `/api` functions alongside it.
 
 The username and password are checked by a server function and are never shipped in the page's JavaScript. Do not add real secrets to Git or commit a `.env` file.
@@ -28,4 +28,7 @@ The Vercel Blob API routes require Vercel's serverless runtime and a connected B
 - Public visitors can upload JPG, PNG, or WEBP files up to 25 MB each.
 - Uploaded images stay private; only an authenticated admin can list, view, replace, or delete them.
 - Each sheet can use its own paper size. Admin sheet dimensions and layouts are stored in private Blob storage and restored after signing in from another device.
+- Each sheet has a QR upload link. Images uploaded from that QR are resized to the sheet's configured image dimensions at 300 DPI, saved in that sheet's private folder, and tagged for the matching sheet.
+- The QR upload flow stores the resized 300 DPI JPEG, not the original. Resizing can reduce storage for large images; small source images may grow when upscaled.
+- Sheet sizes and placement settings are saved in a private `admin/layout.json` Blob. QR links resolve their current dimensions from this saved layout.
 - “New sheet” clears the current layout while keeping uploaded images in the library.

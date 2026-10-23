@@ -1,5 +1,5 @@
-import { handleUpload } from '@vercel/blob/client';
-import { get, list } from '@vercel/blob';
+import { get, issueSignedToken, list } from '@vercel/blob';
+import { handleUploadPresigned } from '@vercel/blob/client';
 
 async function storedLayout() {
   const stored = await get('admin/layout.json', { access: 'private' });
@@ -33,10 +33,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
   try {
     const body = req.body;
-    const result = await handleUpload({
+    const result = await handleUploadPresigned({
       body,
       request: req,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
+      getSignedToken: async (pathname, clientPayload) => {
         if (!/^customer-uploads\/(?:unassigned|\d+)\/[a-z0-9-]{36}-[a-zA-Z0-9._-]+$/i.test(pathname)) {
           throw new Error('Invalid upload path.');
         }
@@ -55,14 +55,24 @@ export default async function handler(req, res) {
             throw new Error(`This page has reached its photo limit of ${maxPhotos}. Please contact the print team.`);
           }
         }
-        return {
-          allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
+        const allowedContentTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        const validUntil = Date.now() + 5 * 60 * 1000;
+        const token = await issueSignedToken({
+          pathname,
+          operations: ['put'],
+          allowedContentTypes,
           maximumSizeInBytes: 25 * 1024 * 1024,
-          addRandomSuffix: false,
-          tokenPayload: JSON.stringify({ source: 'public-upload' }),
+          validUntil,
+        });
+        return {
+          token,
+          urlOptions: {
+            allowedContentTypes,
+            maximumSizeInBytes: 25 * 1024 * 1024,
+            validUntil,
+          },
         };
       },
-      onUploadCompleted: async () => {},
     });
     return res.status(200).json(result);
   } catch (error) {

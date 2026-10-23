@@ -5,7 +5,7 @@ Print layout studio with a public, upload-only page and a private admin workspac
 ## Deploy from Git to Vercel
 
 1. Commit this project folder to a Git repository and import that repository in Vercel. If the project lives in a subfolder, set Vercel's **Root Directory** to the folder containing this `package.json`.
-2. In the Vercel project, create a **private** Blob store and connect it to the project for Production, Preview, and Development. The connection must provide `BLOB_READ_WRITE_TOKEN` so the upload route can authorize browser uploads.
+2. In the Vercel project, create a **private** Blob store and connect it to the project for Production, Preview, and Development. Connect the store to the deployment environment. The upload route issues short-lived, path-scoped upload URLs using Vercel Blob credentials, so no Blob secret is exposed in browser code.
 3. In **Project Settings → Environment Variables**, add:
    - `ADMIN_USERNAME` — for example, `admin`
    - `ADMIN_PASSWORD` — a long, unique password of your choice
@@ -16,7 +16,7 @@ Open the deployed site with `?admin=1` to sign in (for example, `https://your-si
 
 ## Verify Vercel Blob
 
-After deployment, open `/api/blob-status` on the deployed site. A connected store returns `{"connected":true}`. If it returns `connected:false`, connect the Blob store to the same Vercel project and environment, then redeploy. A 404 means the latest API route has not been deployed yet.
+After deployment, open `/api/blob-status` on the deployed site. A ready upload route returns `{"connected":true,"uploadsReady":true}`. This check signs a short-lived upload token but does not create a file. If it returns `connected:false`, connect the Blob store to the same Vercel project and environment, then redeploy. A 404 means the latest API route has not been deployed yet.
 
 ## Local development
 

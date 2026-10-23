@@ -1,12 +1,18 @@
-import { get } from '@vercel/blob';
+import { issueSignedToken } from '@vercel/blob';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed.' });
   try {
-    // A missing layout file is normal for a new project; a successful lookup
-    // (including a not-found result) confirms the deployment can reach Blob.
-    await get('admin/layout.json', { access: 'private' });
-    return res.status(200).json({ connected: true, message: 'Vercel Blob is reachable.' });
+    // Minting a short-lived, path-scoped token checks the same OIDC/signing
+    // capability used by uploads without creating a file in the store.
+    await issueSignedToken({
+      pathname: `health-check/${Date.now()}.jpg`,
+      operations: ['put'],
+      allowedContentTypes: ['image/jpeg'],
+      maximumSizeInBytes: 1024,
+      validUntil: Date.now() + 60_000,
+    });
+    return res.status(200).json({ connected: true, uploadsReady: true, message: 'Vercel Blob upload signing is ready.' });
   } catch (error) {
     const message = error.message || '';
     const setupError = /token|blob|store|credential|permission|authoriz/i.test(message);

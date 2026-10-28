@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     }
     if (req.method === 'PUT') {
       const state = req.body || {};
-      if (!Array.isArray(state.pages) || state.pages.length > 100) return res.status(400).json({ error: 'Invalid layout.' });
+      if (!Array.isArray(state.pages) || state.pages.length > 1000 || (state.jobs != null && (!Array.isArray(state.jobs) || state.jobs.length > 500))) return res.status(400).json({ error: 'Invalid print workspace.' });
       await put(PATH, JSON.stringify(state), {
         access: 'private',
         contentType: 'application/json',

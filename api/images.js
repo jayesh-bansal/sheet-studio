@@ -36,9 +36,8 @@ export default async function handler(req, res) {
       const images = (await allImages()).map(blob => ({
         pathname: blob.pathname,
         name: blob.pathname.split('/').pop().replace(/^[0-9a-f-]{36}-/i, ''),
-        templateId: blob.pathname.split('/').length < 3 || blob.pathname.split('/')[1] === 'unassigned'
-          ? null
-          : blob.pathname.split('/')[1],
+        templateId: blob.pathname.split('/')[1] === 'unassigned' ? null : (/^\d+$/.test(blob.pathname.split('/')[1] || '') ? blob.pathname.split('/')[1] : null),
+        jobId: blob.pathname.split('/')[1] === 'unassigned' ? null : (blob.pathname.split('/').length >= 4 ? blob.pathname.split('/')[2] : 'job-default'),
         size: blob.size,
         contentType: blob.contentType,
         uploadedAt: blob.uploadedAt,

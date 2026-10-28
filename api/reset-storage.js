@@ -19,7 +19,7 @@ async function deletePrefix(prefix) {
 export default async function handler(req, res) {
   if (!isAdmin(req)) return unauthorized(res);
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
-  if (req.body?.settingsVersion !== 3) return res.status(400).json({ error: 'Reset confirmation is required.' });
+  if (req.body?.settingsVersion !== 4) return res.status(400).json({ error: 'Reset confirmation is required.' });
   try {
     const deletedUploads = await deletePrefix('customer-uploads/');
     const deletedAdminRecords = await deletePrefix('admin/');

@@ -37,3 +37,22 @@ The Vercel Blob API routes require Vercel's serverless runtime and a Blob store 
 - The QR upload flow stores the resized 300 DPI JPEG, not the original. Resizing can reduce storage for large images; small source images may grow when upscaled.
 - Sheet sizes and placement settings are saved in a private `admin/layout.json` Blob. QR links resolve their current dimensions from this saved layout.
 - Uploaders see per-image transfer progress and a completion status. Each template QR opens the same upload page with its own saved print settings.
+# Image storage: Cloudflare R2 + Supabase catalog
+
+The default remains Vercel Blob. To switch image files to R2 while retaining private uploads and shared admin access:
+
+1. Create a private Cloudflare R2 bucket and an R2 API token with object read/write access limited to that bucket.
+2. Create a Supabase project and run `supabase/migrations/202610290001_photo_catalog.sql` in its SQL editor.
+3. Add `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` to Vercel for the deployment environments.
+4. Configure the R2 bucket CORS policy to allow `PUT` from your Vercel site origin (and localhost if developing locally), with the `Content-Type` request header.
+5. Set `STORAGE_PROVIDER=r2` and redeploy. The app reports a configuration error instead of silently using Blob if R2 is selected with missing values.
+
+R2 stores the uploaded image objects. Supabase stores their private catalog metadata, upload batches, atomic photo-number counters, and print layout. Admin sync reads new catalog rows after its last timestamp; it does not list the R2 bucket. Existing Blob images and layouts remain in Blob and are not deleted by this change. After configuring R2, sign in as admin and run this in the browser console to copy existing photos, completion records, and layout into R2/Supabase in resumable batches; the source Blob objects are preserved:
+
+```js
+(async()=>{let state={};do{const r=await fetch('/api/migrate-blob-to-r2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});state=await r.json();console.log(state);if(!r.ok)throw Error(state.error)}while(!state.done)})()
+```
+
+After migration, Blob is not used by the R2 runtime.
+
+Do not expose `SUPABASE_SERVICE_ROLE_KEY` or `R2_SECRET_ACCESS_KEY` in browser code or commit actual credentials.

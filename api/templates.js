@@ -1,4 +1,5 @@
 import { get, list } from '@vercel/blob';
+import { db, r2Ready, r2Requested } from '../lib/r2.js';
 
 function fitCapacity(page) {
   const sheetW = Number(page.sheetW) || 210;
@@ -37,24 +38,47 @@ async function countUploads(id, jobId) {
   return { count, nextPhotoNumber: largestPhotoNumber + 1 };
 }
 
+async function storedLayout() {
+  if (r2Ready()) {
+    const rows = await db('app_state?select=value&key=eq.print_layout&limit=1');
+    if (rows[0]?.value) return rows[0].value;
+    let legacy;
+    try { legacy = await get('admin/layout.json', { access: 'private' }); } catch { return null; }
+    if (!legacy || legacy.statusCode !== 200) return null;
+    const chunks = [];
+    for await (const chunk of legacy.stream) chunks.push(chunk);
+    const state = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    await db('app_state?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify({ key: 'print_layout', value: state }) });
+    return state;
+  }
+  const stored = await get('admin/layout.json', { access: 'private' });
+  if (!stored || stored.statusCode !== 200) return null;
+  const chunks = [];
+  for await (const chunk of stored.stream) chunks.push(chunk);
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed.' });
   const id = String(req.query.id || '');
   const jobId = String(req.query.jobId || 'job-default');
   if (!/^[1-3]$/.test(id) || !/^job-[a-z0-9-]{6,64}$/i.test(jobId)) return res.status(400).json({ error: 'Invalid upload template or print job.' });
   try {
-    const stored = await get('admin/layout.json', { access: 'private' });
-    if (!stored || stored.statusCode !== 200) return res.status(404).json({ error: 'Upload template not found.' });
-    const chunks = [];
-    for await (const chunk of stored.stream) chunks.push(chunk);
-    const layout = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
+    const layout = await storedLayout();
+    if (!layout) return res.status(404).json({ error: 'Upload template not found.' });
     const page = layout.pages?.find(item => String(item.id) === id);
     const job = (layout.jobs || [{ id: 'job-default', name: 'Current job', status: 'active' }]).find(item => item.id === jobId);
     if (!job || job.status === 'archived' || job.status === 'complete') return res.status(404).json({ error: 'This print job is closed. Ask the print admin for a current upload link.' });
     if (!page) return res.status(404).json({ error: 'This upload page is no longer available.' });
     const capacity = fitCapacity(page);
     const maxPhotos = Math.min(capacity, Math.max(1, Number(page.maxPhotos) || capacity));
-    const uploadSequence = await countUploads(id, jobId);
+    let uploadSequence;
+    if (r2Ready()) {
+      const rows = await db(`photo_assets?select=pathname&template_id=eq.${encodeURIComponent(id)}&job_id=eq.${encodeURIComponent(jobId)}`);
+      const seq = await db(`photo_sequences?select=next_number&template_id=eq.${encodeURIComponent(id)}&job_id=eq.${encodeURIComponent(jobId)}&limit=1`);
+      uploadSequence = { count: rows.length, nextPhotoNumber: Number(seq[0]?.next_number || 1) };
+    } else uploadSequence = await countUploads(id, jobId);
     return res.status(200).json({
       id: page.id,
       jobId,

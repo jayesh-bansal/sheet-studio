@@ -1,6 +1,7 @@
 import { del, list, put } from '@vercel/blob';
 import { isAdmin, unauthorized } from '../lib/auth.js';
 import { createDefaultLayout } from '../lib/default-layout.js';
+import { db, dbAll, r2Ready, r2Requested, signedR2Url } from '../lib/r2.js';
 
 async function deletePrefix(prefix) {
   const paths = [];
@@ -21,6 +22,22 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
   if (req.body?.settingsVersion !== 4) return res.status(400).json({ error: 'Reset confirmation is required.' });
   try {
+    if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
+    if (r2Ready()) {
+      const photos = await dbAll('photo_assets?select=pathname');
+      for (let i = 0; i < photos.length; i += 20) {
+        const results = await Promise.all(photos.slice(i, i + 20).map(photo => fetch(signedR2Url('DELETE', photo.pathname, 300), { method: 'DELETE' })));
+        if (results.some(result => !result.ok)) throw new Error('Could not delete all R2 images during reset. The catalog was preserved.');
+      }
+      await Promise.all([
+        db('photo_assets?pathname=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+        db('photo_batches?id=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+        db('photo_sequences?template_id=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } }),
+      ]);
+      const layout = createDefaultLayout();
+      await db('app_state?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: 'print_layout', value: layout, updated_at: new Date().toISOString() }) });
+      return res.status(200).json({ reset: true, deletedUploads: photos.length, deletedAdminRecords: 0, layout });
+    }
     const deletedUploads = await deletePrefix('customer-uploads/');
     const deletedAdminRecords = await deletePrefix('admin/');
     const layout = createDefaultLayout();

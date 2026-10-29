@@ -1,7 +1,21 @@
+import { randomUUID } from 'node:crypto';
 import { get, issueSignedToken, list } from '@vercel/blob';
 import { handleUploadPresigned } from '@vercel/blob/client';
+import { db, reservePhotoNumber, r2Ready, r2Requested, signedR2Url } from '../lib/r2.js';
 
 async function storedLayout() {
+  if (r2Ready()) {
+    const rows = await db('app_state?select=value&key=eq.print_layout&limit=1');
+    if (rows[0]?.value) return rows[0].value;
+    let stored;
+    try { stored = await get('admin/layout.json', { access: 'private' }); } catch { return {}; }
+    if (!stored || stored.statusCode !== 200) return {};
+    const chunks = [];
+    for await (const chunk of stored.stream) chunks.push(chunk);
+    const state = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    await db('app_state?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify({ key: 'print_layout', value: state }) });
+    return state;
+  }
   const stored = await get('admin/layout.json', { access: 'private' });
   if (!stored || stored.statusCode !== 200) return {};
   const chunks = [];
@@ -28,6 +42,26 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
   try {
     const body = req.body;
+    if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
+    if (r2Ready()) {
+      const { templateId: requestedTemplate, jobId = 'job-default', originalName = 'photo.jpg', contentType = 'image/jpeg' } = body || {};
+      const templateId = requestedTemplate == null ? 'unassigned' : String(requestedTemplate);
+      if (!(templateId === 'unassigned' || /^\d+$/.test(templateId)) || !/^job-[a-z0-9-]{6,64}$/i.test(jobId)) return res.status(400).json({ error: 'Invalid upload page or print job.' });
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) return res.status(400).json({ error: 'Only JPEG, PNG, and WebP images are supported.' });
+      if (templateId !== 'unassigned') {
+        const layout = await storedLayout();
+        const template = layout.pages?.find(page => String(page.id) === templateId);
+        const job = (layout.jobs || [{ id: 'job-default', status: 'active' }]).find(item => item.id === jobId);
+        if (!template || !job || job.status === 'archived' || job.status === 'complete') return res.status(400).json({ error: 'This upload page or print job is no longer available.' });
+      }
+      const current = await db(`photo_assets?select=pathname&template_id=eq.${encodeURIComponent(templateId)}&job_id=eq.${encodeURIComponent(jobId)}&limit=501`);
+      if (current.length >= 500) return res.status(400).json({ error: 'This upload link has reached its 500-photo queue limit.' });
+      const number = await reservePhotoNumber(templateId, jobId);
+      const ext = (String(originalName).match(/\.[a-zA-Z0-9]+$/) || ['.jpg'])[0].toLowerCase();
+      const name = `${String(number).padStart(3, '0')}${ext}`;
+      const pathname = `customer-uploads/${templateId === 'unassigned' ? 'unassigned' : `${templateId}/${jobId}`}/${randomUUID()}-${name}`;
+      return res.status(200).json({ provider: 'r2', pathname, name, templateId, jobId, uploadUrl: signedR2Url('PUT', pathname, 300), contentType });
+    }
     const result = await handleUploadPresigned({
       body,
       request: req,

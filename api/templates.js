@@ -16,18 +16,25 @@ async function countUploads(id, jobId) {
   const prefixes = [`customer-uploads/${id}/${jobId}/`];
   if (jobId === 'job-default') prefixes.push(`customer-uploads/${id}/`);
   let count = 0;
+  let largestPhotoNumber = 0;
   for (const prefix of prefixes) {
     let cursor;
     do {
       const result = await list({ access: 'private', prefix, limit: 1000, cursor });
-      count += result.blobs.filter(blob => {
+      const matching = result.blobs.filter(blob => {
         const parts = blob.pathname.split('/');
         return prefix.endsWith(`/${jobId}/`) ? parts.length >= 4 && parts[2] === jobId : parts.length === 3 && jobId === 'job-default';
-      }).length;
+      });
+      count += matching.length;
+      for (const blob of matching) {
+        const filename = blob.pathname.split('/').pop();
+        const number = filename.match(/^[0-9a-f-]{36}-(\d+)/i)?.[1];
+        if (number) largestPhotoNumber = Math.max(largestPhotoNumber, Number(number));
+      }
       cursor = result.hasMore ? result.cursor : undefined;
     } while (cursor);
   }
-  return count;
+  return { count, nextPhotoNumber: largestPhotoNumber + 1 };
 }
 
 export default async function handler(req, res) {
@@ -47,6 +54,7 @@ export default async function handler(req, res) {
     if (!page) return res.status(404).json({ error: 'This upload page is no longer available.' });
     const capacity = fitCapacity(page);
     const maxPhotos = Math.min(capacity, Math.max(1, Number(page.maxPhotos) || capacity));
+    const uploadSequence = await countUploads(id, jobId);
     return res.status(200).json({
       id: page.id,
       jobId,
@@ -63,7 +71,8 @@ export default async function handler(req, res) {
       sheetW: Number(page.sheetW) || 210,
       sheetH: Number(page.sheetH) || 297,
       maxPhotos,
-      uploadedCount: await countUploads(id, jobId),
+      uploadedCount: uploadSequence.count,
+      nextPhotoNumber: uploadSequence.nextPhotoNumber,
     });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Could not load upload template.' });

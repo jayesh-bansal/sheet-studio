@@ -63,6 +63,7 @@ export default async function handler(req, res) {
       itemW: Number(page.itemW) || 60,
       itemH: Number(page.itemH) || 90,
       cropFill: Boolean(page.cropFill),
+      autoRotateLandscape: page.autoRotateLandscape !== false,
       marginX: Number(page.marginX ?? page.margin ?? 3),
       marginY: Number(page.marginY ?? page.margin ?? 3),
       spacingX: Number(page.spacingX ?? page.spacing ?? 3),

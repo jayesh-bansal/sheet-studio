@@ -6,7 +6,7 @@ import { r2Ready, r2Requested, signedR2Url } from '../lib/r2.js';
 export default async function handler(req, res) {
   if (!isAdmin(req)) return unauthorized(res);
   const pathname = String(req.query.pathname || '');
-  if (!pathname.startsWith('customer-uploads/')) return res.status(400).send('Invalid image path.');
+  if (!pathname.startsWith('customer-uploads/') && !pathname.startsWith('payment-proofs/')) return res.status(400).send('Invalid image path.');
   try {
     if (r2Requested() && !r2Ready()) return res.status(503).send('R2 is selected but the R2 or Supabase environment variables are incomplete.');
     if (r2Ready()) {

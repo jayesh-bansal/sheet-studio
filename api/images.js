@@ -51,7 +51,7 @@ export default async function handler(req, res) {
           dbAll(`photo_batches?select=id,template_id,job_id,count,pathnames,completed_at&order=completed_at.asc${after ? `&completed_at=gte.${encodeURIComponent(after)}` : ''}`),
         ]);
         const images = rows.map(row => ({ pathname: row.pathname, name: row.name, templateId: row.template_id === 'unassigned' ? null : row.template_id, jobId: row.template_id === 'unassigned' ? null : row.job_id, size: row.size, contentType: row.content_type, uploadedAt: row.uploaded_at }));
-        const completedBatches = batches.map(row => ({ id: row.id, templateId: row.template_id, jobId: row.job_id, count: row.count, pathnames: row.pathnames, completedAt: row.completed_at }));
+        const completedBatches = batches.map(row => { const saved = row.pathnames; return { id: row.id, templateId: row.template_id, jobId: row.job_id, count: row.count, pathnames: Array.isArray(saved) ? saved : (saved?.photos || []), paymentPathname: Array.isArray(saved) ? null : (saved?.paymentPathname || null), completedAt: row.completed_at }; });
         return res.status(200).json({ images, completedBatches });
       }
       const images = (await allImages()).map(blob => ({

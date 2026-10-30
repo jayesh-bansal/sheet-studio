@@ -44,10 +44,22 @@ export default async function handler(req, res) {
     const body = req.body;
     if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
     if (r2Ready()) {
-      const { templateId: requestedTemplate, jobId = 'job-default', originalName = 'photo.jpg', contentType = 'image/jpeg' } = body || {};
+      const { kind = 'photo', templateId: requestedTemplate, jobId = 'job-default', originalName = 'photo.jpg', contentType = 'image/jpeg' } = body || {};
       const templateId = requestedTemplate == null ? 'unassigned' : String(requestedTemplate);
       if (!(templateId === 'unassigned' || /^\d+$/.test(templateId)) || !/^job-[a-z0-9-]{6,64}$/i.test(jobId)) return res.status(400).json({ error: 'Invalid upload page or print job.' });
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) return res.status(400).json({ error: 'Only JPEG, PNG, and WebP images are supported.' });
+      if (kind !== 'photo' && kind !== 'payment') return res.status(400).json({ error: 'Invalid upload type.' });
+      if (kind === 'payment') {
+        if (templateId !== 'unassigned') {
+          const layout = await storedLayout();
+          const template = layout.pages?.find(page => String(page.id) === templateId);
+          const job = (layout.jobs || [{ id: 'job-default', status: 'active' }]).find(item => item.id === jobId);
+          if (!template || !job || job.status === 'archived' || job.status === 'complete') return res.status(400).json({ error: 'This upload page or print job is no longer available.' });
+        }
+        const ext = (String(originalName).match(/\.(jpg|jpeg|png|webp)$/i) || ['.jpg'])[0].toLowerCase();
+        const pathname = `payment-proofs/${templateId}/${jobId}/${randomUUID()}${ext}`;
+        return res.status(200).json({ provider: 'r2', pathname, templateId, jobId, uploadUrl: signedR2Url('PUT', pathname, 300), contentType });
+      }
       if (templateId !== 'unassigned') {
         const layout = await storedLayout();
         const template = layout.pages?.find(page => String(page.id) === templateId);
@@ -66,13 +78,13 @@ export default async function handler(req, res) {
       body,
       request: req,
       getSignedToken: async (pathname, clientPayload) => {
-        if (!/^customer-uploads\/(?:unassigned\/[a-z0-9-]{36}-[a-zA-Z0-9._-]+|\d+\/(?:job-[a-z0-9-]{6,64}\/)?[a-z0-9-]{36}-[a-zA-Z0-9._-]+)$/i.test(pathname)) {
-          throw new Error('Invalid upload path.');
-        }
+        const isPayment = /^payment-proofs\/(?:unassigned|\d+)\/job-[a-z0-9-]{6,64}\/[a-z0-9-]{36}\.(?:jpg|jpeg|png|webp)$/i.test(pathname);
+        const isPhoto = /^customer-uploads\/(?:unassigned\/[a-z0-9-]{36}-[a-zA-Z0-9._-]+|\d+\/(?:job-[a-z0-9-]{6,64}\/)?[a-z0-9-]{36}-[a-zA-Z0-9._-]+)$/i.test(pathname);
+        if (!isPhoto && !isPayment) throw new Error('Invalid upload path.');
         const parts = pathname.split('/');
         const templateId = parts[1];
         if (templateId !== 'unassigned') {
-          const jobId = parts.length >= 4 ? parts[2] : 'job-default';
+          const jobId = isPayment ? parts[2] : (parts.length >= 4 ? parts[2] : 'job-default');
           const layout = await storedLayout();
           const template = layout.pages?.find(page => String(page.id) === templateId);
           const job = (layout.jobs || [{ id: 'job-default', status: 'active' }]).find(item => item.id === jobId);

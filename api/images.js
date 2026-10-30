@@ -1,5 +1,5 @@
 import { del, get, list } from '@vercel/blob';
-import { isAdmin, unauthorized } from '../lib/auth.js';
+import { isAdmin, rejectCrossOrigin, unauthorized } from '../lib/auth.js';
 import { db, dbAll, r2Ready, r2Requested, signedR2Url } from '../lib/r2.js';
 
 async function completedUploads() {
@@ -7,12 +7,17 @@ async function completedUploads() {
   let cursor;
   do {
     const result = await list({ access: 'private', prefix: 'admin/upload-completions/', limit: 1000, cursor });
-    for (const blob of result.blobs) {
-      const stored = await get(blob.pathname, { access: 'private' });
-      if (!stored || stored.statusCode !== 200) continue;
-      const chunks = [];
-      for await (const chunk of stored.stream) chunks.push(chunk);
-      try { records.push(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch {}
+      for (let offset = 0; offset < result.blobs.length; offset += 8) {
+      const page = await Promise.all(result.blobs.slice(offset, offset + 8).map(async blob => {
+        try {
+          const stored = await get(blob.pathname, { access: 'private' });
+          if (!stored || stored.statusCode !== 200) return null;
+          const chunks = [];
+          for await (const chunk of stored.stream) chunks.push(chunk);
+          return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        } catch { return null; }
+      }));
+      records.push(...page.filter(Boolean));
     }
     cursor = result.hasMore ? result.cursor : undefined;
   } while (cursor);
@@ -32,6 +37,7 @@ async function allImages() {
 
 export default async function handler(req, res) {
   if (!isAdmin(req)) return unauthorized(res);
+  if (req.method !== 'GET' && rejectCrossOrigin(req, res)) return;
   try {
     if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
     if (req.method === 'POST' && r2Ready()) {

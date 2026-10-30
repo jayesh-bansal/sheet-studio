@@ -58,7 +58,7 @@ export default async function handler(req, res) {
         }
         const ext = (String(originalName).match(/\.(jpg|jpeg|png|webp)$/i) || ['.jpg'])[0].toLowerCase();
         const pathname = `payment-proofs/${templateId}/${jobId}/${randomUUID()}${ext}`;
-        return res.status(200).json({ provider: 'r2', pathname, templateId, jobId, uploadUrl: signedR2Url('PUT', pathname, 300), contentType });
+        return res.status(200).json({ provider: 'r2', pathname, templateId, jobId, uploadUrl: signedR2Url('PUT', pathname, 300, contentType), contentType });
       }
       if (templateId !== 'unassigned') {
         const layout = await storedLayout();
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
       const ext = (String(originalName).match(/\.[a-zA-Z0-9]+$/) || ['.jpg'])[0].toLowerCase();
       const name = `${String(number).padStart(3, '0')}${ext}`;
       const pathname = `customer-uploads/${templateId === 'unassigned' ? 'unassigned' : `${templateId}/${jobId}`}/${randomUUID()}-${name}`;
-      return res.status(200).json({ provider: 'r2', pathname, name, templateId, jobId, uploadUrl: signedR2Url('PUT', pathname, 300), contentType });
+      return res.status(200).json({ provider: 'r2', pathname, name, templateId, jobId, uploadUrl: signedR2Url('PUT', pathname, 300, contentType), contentType });
     }
     const result = await handleUploadPresigned({
       body,

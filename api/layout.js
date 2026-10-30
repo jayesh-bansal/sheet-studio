@@ -1,11 +1,12 @@
 import { get, put } from '@vercel/blob';
-import { isAdmin, unauthorized } from '../lib/auth.js';
+import { isAdmin, rejectCrossOrigin, unauthorized } from '../lib/auth.js';
 import { db, r2Ready, r2Requested } from '../lib/r2.js';
 
 const PATH = 'admin/layout.json';
 
 export default async function handler(req, res) {
   if (!isAdmin(req)) return unauthorized(res);
+  if (req.method !== 'GET' && rejectCrossOrigin(req, res)) return;
   try {
     if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
     if (req.method === 'GET') {
@@ -29,7 +30,8 @@ export default async function handler(req, res) {
     }
     if (req.method === 'PUT') {
       const state = req.body || {};
-      if (!Array.isArray(state.pages) || state.pages.length > 1000 || (state.jobs != null && (!Array.isArray(state.jobs) || state.jobs.length > 500))) return res.status(400).json({ error: 'Invalid print workspace.' });
+      if (!Array.isArray(state.pages) || state.pages.length > 1000 || state.pages.some(page => !page || !Array.isArray(page.items) || page.items.length > 500) || (state.jobs != null && (!Array.isArray(state.jobs) || state.jobs.length > 500))) return res.status(400).json({ error: 'Invalid print workspace.' });
+      if (Buffer.byteLength(JSON.stringify(state), 'utf8') > 3_800_000) return res.status(413).json({ error: 'Print workspace is too large to save. Remove old completed sheets or uploaded placements and try again.' });
       if (r2Ready()) {
         await db('app_state?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: 'print_layout', value: state, updated_at: new Date().toISOString() }) });
         return res.status(200).json({ saved: true });

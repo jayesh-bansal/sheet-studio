@@ -4,6 +4,7 @@ import { isAdmin, unauthorized } from '../lib/auth.js';
 import { r2Ready, r2Requested, signedR2Url } from '../lib/r2.js';
 
 export default async function handler(req, res) {
+  if (req.method !== 'GET') return res.status(405).send('Method not allowed.');
   if (!isAdmin(req)) return unauthorized(res);
   const pathname = String(req.query.pathname || '');
   if (!pathname.startsWith('customer-uploads/') && !pathname.startsWith('payment-proofs/')) return res.status(400).send('Invalid image path.');

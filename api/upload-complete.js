@@ -18,16 +18,23 @@ export default async function handler(req, res) {
   try {
     if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
     if (r2Ready()) {
-      const records = [];
-      for (const pathname of pathnames) {
-        const head = await fetch(signedR2Url('HEAD', pathname, 300), { method: 'HEAD' });
-        if (!head.ok) return res.status(400).json({ error: 'An upload is not available in R2 yet.' });
-        records.push({ pathname, template_id: String(templateId), job_id: jobId, name: pathname.split('/').pop().replace(/^[0-9a-f-]{36}-/i, ''), size: Number(head.headers.get('content-length') || 0), content_type: head.headers.get('content-type') || 'image/jpeg', uploaded_at: new Date().toISOString(), batch_id: batchId });
+      const pathsToCheck = paymentPathname ? [...pathnames, paymentPathname] : pathnames;
+      const checked = new Array(pathsToCheck.length);
+      for (let offset = 0; offset < pathsToCheck.length; offset += 16) {
+        const batch = pathsToCheck.slice(offset, offset + 16);
+        const results = await Promise.all(batch.map(pathname => fetch(signedR2Url('HEAD', pathname, 300), { method: 'HEAD' })));
+        for (let index = 0; index < results.length; index++) checked[offset + index] = results[index];
       }
-      if (paymentPathname) {
-        const proof = await fetch(signedR2Url('HEAD', paymentPathname, 300), { method: 'HEAD' });
-        if (!proof.ok) return res.status(400).json({ error: 'Payment proof is not available in R2 yet.' });
+      if (pathnames.some((_, index) => !checked[index]?.ok)) return res.status(400).json({ error: 'An upload is not available in R2 yet.' });
+      if (paymentPathname && !checked[pathnames.length]?.ok) return res.status(400).json({ error: 'Payment proof is not available in R2 yet.' });
+      const oversized = pathsToCheck.filter((_, index) => Number(checked[index].headers.get('content-length') || 0) > 25 * 1024 * 1024);
+      const unsupported = pathsToCheck.filter((_, index) => !['image/jpeg', 'image/png', 'image/webp'].includes((checked[index].headers.get('content-type') || '').split(';')[0].trim().toLowerCase()));
+      if (oversized.length || unsupported.length) {
+        await Promise.all([...new Set([...oversized, ...unsupported])].map(pathname => fetch(signedR2Url('DELETE', pathname, 300), { method: 'DELETE' }).catch(() => null)));
+        return res.status(400).json({ error: oversized.length ? 'Files must be 25 MB or smaller.' : 'Only JPEG, PNG, and WebP files are supported.' });
       }
+      const uploadedAt = new Date().toISOString();
+      const records = pathnames.map((pathname, index) => ({ pathname, template_id: String(templateId), job_id: jobId, name: pathname.split('/').pop().replace(/^[0-9a-f-]{36}-/i, ''), size: Number(checked[index].headers.get('content-length') || 0), content_type: checked[index].headers.get('content-type') || 'image/jpeg', uploaded_at: uploadedAt, batch_id: batchId }));
       await db('photo_assets?on_conflict=pathname', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(records) });
       const batchPaths = paymentPathname ? { photos: pathnames, paymentPathname } : pathnames;
       await db('photo_batches?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify({ id: batchId, template_id: String(templateId), job_id: jobId, count: pathnames.length, pathnames: batchPaths, completed_at: new Date().toISOString() }) });

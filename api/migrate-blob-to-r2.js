@@ -1,5 +1,5 @@
 import { get, list } from '@vercel/blob';
-import { isAdmin, unauthorized } from '../lib/auth.js';
+import { isAdmin, rejectCrossOrigin, unauthorized } from '../lib/auth.js';
 import { db, r2Ready, r2Requested, signedR2Url } from '../lib/r2.js';
 
 async function readJsonBlob(pathname) {
@@ -12,6 +12,7 @@ async function readJsonBlob(pathname) {
 
 export default async function handler(req, res) {
   if (!isAdmin(req)) return unauthorized(res);
+  if (req.method === 'POST' && rejectCrossOrigin(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
   if (!r2Requested() || !r2Ready()) return res.status(503).json({ error: 'Configure R2 and Supabase before migrating existing Blob files.' });
   const phase = req.body?.phase === 'batches' ? 'batches' : 'photos';

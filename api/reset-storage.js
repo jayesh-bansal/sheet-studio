@@ -1,5 +1,5 @@
 import { del, list, put } from '@vercel/blob';
-import { isAdmin, unauthorized } from '../lib/auth.js';
+import { isAdmin, rejectCrossOrigin, unauthorized } from '../lib/auth.js';
 import { createDefaultLayout } from '../lib/default-layout.js';
 import { db, dbAll, r2Ready, r2Requested, signedR2Url } from '../lib/r2.js';
 
@@ -19,14 +19,17 @@ async function deletePrefix(prefix) {
 
 export default async function handler(req, res) {
   if (!isAdmin(req)) return unauthorized(res);
+  if (rejectCrossOrigin(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed.' });
-  if (req.body?.settingsVersion !== 4) return res.status(400).json({ error: 'Reset confirmation is required.' });
+  if (req.body?.confirmation !== 'DELETE ALL STORED PHOTOS') return res.status(400).json({ error: 'Send confirmation: DELETE ALL STORED PHOTOS to remove stored images.' });
   try {
     if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
     if (r2Ready()) {
-      const photos = await dbAll('photo_assets?select=pathname');
-      for (let i = 0; i < photos.length; i += 20) {
-        const results = await Promise.all(photos.slice(i, i + 20).map(photo => fetch(signedR2Url('DELETE', photo.pathname, 300), { method: 'DELETE' })));
+      const [photos, batches] = await Promise.all([dbAll('photo_assets?select=pathname'), dbAll('photo_batches?select=pathnames')]);
+      const paymentPaths = batches.map(batch => Array.isArray(batch.pathnames) ? null : batch.pathnames?.paymentPathname).filter(path => typeof path === 'string' && path.startsWith('payment-proofs/'));
+      const objectPaths = [...new Set([...photos.map(photo => photo.pathname), ...paymentPaths])];
+      for (let i = 0; i < objectPaths.length; i += 20) {
+        const results = await Promise.all(objectPaths.slice(i, i + 20).map(path => fetch(signedR2Url('DELETE', path, 300), { method: 'DELETE' })));
         if (results.some(result => !result.ok)) throw new Error('Could not delete all R2 images during reset. The catalog was preserved.');
       }
       await Promise.all([
@@ -36,9 +39,10 @@ export default async function handler(req, res) {
       ]);
       const layout = createDefaultLayout();
       await db('app_state?on_conflict=key', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ key: 'print_layout', value: layout, updated_at: new Date().toISOString() }) });
-      return res.status(200).json({ reset: true, deletedUploads: photos.length, deletedAdminRecords: 0, layout });
+      return res.status(200).json({ reset: true, deletedUploads: objectPaths.length, deletedAdminRecords: 0, layout });
     }
-    const deletedUploads = await deletePrefix('customer-uploads/');
+    const [photoCount, paymentCount] = await Promise.all([deletePrefix('customer-uploads/'), deletePrefix('payment-proofs/')]);
+    const deletedUploads = photoCount + paymentCount;
     const deletedAdminRecords = await deletePrefix('admin/');
     const layout = createDefaultLayout();
     await put('admin/layout.json', JSON.stringify(layout), {

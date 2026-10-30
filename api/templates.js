@@ -61,15 +61,16 @@ async function storedLayout() {
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed.' });
   const id = String(req.query.id || '');
-  const jobId = String(req.query.jobId || 'job-default');
-  if (!/^[1-3]$/.test(id) || !/^job-[a-z0-9-]{6,64}$/i.test(jobId)) return res.status(400).json({ error: 'Invalid upload template or print job.' });
+  const requestedJobId = String(req.query.jobId || '');
+  if (!/^[1-3]$/.test(id) || requestedJobId && !/^job-[a-z0-9-]{6,64}$/i.test(requestedJobId)) return res.status(400).json({ error: 'Invalid upload template.' });
   try {
     if (r2Requested() && !r2Ready()) return res.status(503).json({ error: 'R2 is selected but the R2 or Supabase environment variables are incomplete.' });
     const layout = await storedLayout();
     if (!layout) return res.status(404).json({ error: 'Upload template not found.' });
+    const jobId = requestedJobId || String(layout.activeJobId || 'job-default');
     const page = layout.pages?.find(item => String(item.id) === id);
-    const job = (layout.jobs || [{ id: 'job-default', name: 'Current job', status: 'active' }]).find(item => item.id === jobId);
-    if (!job || job.status === 'archived' || job.status === 'complete') return res.status(404).json({ error: 'This print job is closed. Ask the print admin for a current upload link.' });
+    const job = (layout.jobs || [{ id: 'job-default', name: 'Current workspace', status: 'active' }]).find(item => item.id === jobId);
+    if (!job || job.status === 'archived' || job.status === 'complete') return res.status(404).json({ error: 'This upload page is unavailable. Ask the print admin for a current QR code.' });
     if (!page) return res.status(404).json({ error: 'This upload page is no longer available.' });
     const capacity = fitCapacity(page);
     const maxPhotos = Math.min(capacity, Math.max(1, Number(page.maxPhotos) || capacity));
@@ -82,12 +83,10 @@ export default async function handler(req, res) {
     return res.status(200).json({
       id: page.id,
       jobId,
-      jobName: job.name,
       name: page.name || `Sheet ${page.id}`,
       itemW: Number(page.itemW) || 60,
       itemH: Number(page.itemH) || 90,
       cropFill: Boolean(page.cropFill),
-      autoRotateLandscape: page.autoRotateLandscape !== false,
       marginX: Number(page.marginX ?? page.margin ?? 3),
       marginY: Number(page.marginY ?? page.margin ?? 3),
       spacingX: Number(page.spacingX ?? page.spacing ?? 3),

@@ -9,7 +9,16 @@ export default async function handler(req, res) {
   if (!pathname.startsWith('customer-uploads/')) return res.status(400).send('Invalid image path.');
   try {
     if (r2Requested() && !r2Ready()) return res.status(503).send('R2 is selected but the R2 or Supabase environment variables are incomplete.');
-    if (r2Ready()) return res.redirect(302, signedR2Url('GET', pathname, 300));
+    if (r2Ready()) {
+      const upstream = await fetch(signedR2Url('GET', pathname, 300));
+      if (!upstream.ok || !upstream.body) return res.status(upstream.status || 502).send('Could not load image from R2.');
+      res.setHeader('Content-Type', upstream.headers.get('content-type') || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      const length = upstream.headers.get('content-length');
+      if (length) res.setHeader('Content-Length', length);
+      return Readable.fromWeb(upstream.body).pipe(res);
+    }
     const result = await get(pathname, { access: 'private' });
     if (!result || result.statusCode !== 200) return res.status(404).send('Image not found.');
     res.setHeader('Content-Type', result.blob.contentType);

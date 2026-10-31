@@ -10,6 +10,19 @@ async function readJsonBlob(pathname) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return null; }
 }
 
+async function copyPaymentProof(pathname) {
+  if (typeof pathname !== 'string' || !pathname.startsWith('payment-proofs/')) return false;
+  const item = await get(pathname, { access: 'private' });
+  if (!item || item.statusCode !== 200) return false;
+  const chunks = [];
+  for await (const chunk of item.stream) chunks.push(chunk);
+  const bytes = Buffer.concat(chunks);
+  const contentType = item.blob?.contentType || 'image/jpeg';
+  const uploaded = await fetch(signedR2Url('PUT', pathname, 300), { method: 'PUT', headers: { 'Content-Type': contentType }, body: bytes });
+  if (!uploaded.ok) throw new Error(`R2 copy failed for ${pathname} (${uploaded.status}).`);
+  return true;
+}
+
 export default async function handler(req, res) {
   if (!isAdmin(req)) return unauthorized(res);
   if (req.method === 'POST' && rejectCrossOrigin(req, res)) return;
@@ -56,12 +69,21 @@ export default async function handler(req, res) {
 
     const page = await list({ access: 'private', prefix: 'admin/upload-completions/', limit: 10, cursor });
     const batches = [];
+    let skipped = 0;
     for (const blob of page.blobs) {
       const batch = await readJsonBlob(blob.pathname);
-      if (batch?.id && Array.isArray(batch.pathnames)) batches.push({ id: batch.id, template_id: String(batch.templateId), job_id: batch.jobId || 'job-default', count: batch.count || batch.pathnames.length, pathnames: batch.pathnames, completed_at: batch.completedAt || new Date().toISOString() });
+      const photoPaths = Array.isArray(batch?.pathnames) ? batch.pathnames : (Array.isArray(batch?.pathnames?.photos) ? batch.pathnames.photos : null);
+      const paymentPathname = batch?.paymentPathname || batch?.pathnames?.paymentPathname || null;
+      if (!batch?.id || !photoPaths) { skipped++; continue; }
+      let linkedPayment = null;
+      if (paymentPathname) {
+        if (await copyPaymentProof(paymentPathname)) linkedPayment = paymentPathname;
+        else skipped++;
+      }
+      batches.push({ id: batch.id, template_id: String(batch.templateId), job_id: batch.jobId || 'job-default', count: batch.count || photoPaths.length, pathnames: linkedPayment ? { photos: photoPaths, paymentPathname: linkedPayment } : photoPaths, completed_at: batch.completedAt || new Date().toISOString() });
     }
-    if (batches.length) await db('photo_batches?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(batches) });
-    return res.status(200).json({ phase: 'batches', cursor: page.hasMore ? page.cursor : null, copied: batches.length, skipped: 0, done: !page.hasMore });
+    if (batches.length) await db('photo_batches?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(batches) });
+    return res.status(200).json({ phase: 'batches', cursor: page.hasMore ? page.cursor : null, copied: batches.length, skipped, done: !page.hasMore });
   } catch (error) {
     return res.status(500).json({ error: error.message || 'Could not migrate Blob files to R2.' });
   }
